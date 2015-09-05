@@ -47,8 +47,39 @@ Adafruit_CC3000 cc3000 = Adafruit_CC3000(ADAFRUIT_CC3000_CS, ADAFRUIT_CC3000_IRQ
 
 DateTime now = DateTime(0);
 
+uint8_t parseMonth (char *mo) {
+  if (!strcmp(mo, "Jan")) {
+    return 1;
+  } else if (!strcmp(mo, "Feb")) {
+    return 2;
+  } else if (!strcmp(mo, "Mar")) {
+    return 3;
+  } else if (!strcmp(mo, "Apr")) {
+    return 4;
+  } else if (!strcmp(mo, "May")) {
+    return 5;
+  } else if (!strcmp(mo, "Jun")) {
+    return 6;
+  } else if (!strcmp(mo, "Jul")) {
+    return 7;
+  } else if (!strcmp(mo, "Aug")) {
+    return 8;
+  } else if (!strcmp(mo, "Sep")) {
+    return 9;
+  } else if (!strcmp(mo, "Oct")) {
+    return 10;
+  } else if (!strcmp(mo, "Nov")) {
+    return 11;
+  } else if (!strcmp(mo, "Dec")) {
+    return 12;
+  } else { // invalid
+    return 0;
+  }
+}
+
 DateTime parseHeader(uint32_t ip, uint16_t port, char *host, char *path) {
-    Adafruit_CC3000_Client www = cc3000.connectTCP(ip, port);
+  // first connect to the site we're gonna leech the datetime from
+  Adafruit_CC3000_Client www = cc3000.connectTCP(ip, port);
   if (www.connected()) {
     www.fastrprint(F("GET "));
     www.fastrprint(path);
@@ -61,9 +92,10 @@ DateTime parseHeader(uint32_t ip, uint16_t port, char *host, char *path) {
     return NULL;
   }
 
-  /* Read data until either the connection is closed, or the idle timeout is reached. */ 
+  // try to read the Date line in the http headers
   char line[256];
   size_t pos = 0;
+  bool wehaveadate = 0;
   unsigned long lastRead = millis();
   while (www.connected() && (millis() - lastRead < IDLE_TIMEOUT_MS)) {
     while (www.available()) {
@@ -76,10 +108,10 @@ DateTime parseHeader(uint32_t ip, uint16_t port, char *host, char *path) {
             line[1] == 'a' &&
             line[2] == 't' &&
             line[3] == 'e' &&
-            line[4] == ':') { // please fucking refactor this shit
-          Serial.println(line);
+            line[4] == ':') { // seriously? TODO: fix this shit
+          wehaveadate = 1;
         }
-      } else { // if we haven't reached a newline, put it in the buffer
+      } else if (!wehaveadate) { // if we haven't reached a newline, put it in the buffer
         line[pos] = c;
         line[pos + 1] = 0;
         pos++;
@@ -88,7 +120,27 @@ DateTime parseHeader(uint32_t ip, uint16_t port, char *host, char *path) {
     }
   }
   www.close();
-  Serial.println(F("-------------------------------------"));
+  if (wehaveadate) {
+    // please fucking refactor this shit
+    // this is the fucking worst way to parse shit
+    // TODO: refactor this into an union or something less fucking terrible
+    line[10] = 0; // null after dow
+    line[13] = 0; // null after dom
+    line[17] = 0; // null after month
+    line[22] = 0; // null after year
+    line[25] = 0; // null after hour
+    line[28] = 0; // null after minute
+    line[31] = 0; // null after second
+    char *s_year = line+18;
+    char *s_month = line+14;
+    char *s_day = line+11;
+    char *s_hour = line+23;
+    char *s_minute = line+26;
+    char *s_second = line+29;
+    return DateTime(atoi(s_year), parseMonth(s_month), atoi(s_day), atoi(s_hour), atoi(s_minute), atoi(s_second));    
+  } else {
+    return NULL;
+  }
   
 }
 
@@ -138,6 +190,18 @@ void setup() {
   }
 
   now = parseHeader(ip, 80, WEBSITE, WEBPAGE);
+  Serial.print(F("year: "));
+  Serial.println(now.year());
+  Serial.print(F("month: "));
+  Serial.println(now.month());
+  Serial.print(F("day: "));
+  Serial.println(now.day());
+  Serial.print(F("hour: "));
+  Serial.println(now.hour());
+  Serial.print(F("minute: "));
+  Serial.println(now.minute());
+  Serial.print(F("second: "));
+  Serial.println(now.second());
 }
 
 void loop() {

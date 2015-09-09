@@ -47,6 +47,9 @@ Adafruit_CC3000 cc3000 = Adafruit_CC3000(ADAFRUIT_CC3000_CS, ADAFRUIT_CC3000_IRQ
 
 DateTime now = DateTime(0);
 
+/**
+ * converts a three letter english abbreviation for a month into the months number
+ */
 uint8_t parseMonth (char *mo) {
   if (!strcmp(mo, "Jan")) {
     return 1;
@@ -77,7 +80,28 @@ uint8_t parseMonth (char *mo) {
   }
 }
 
+
+/**
+ * connects to a web server and parses its HTTP Date: header to get the current DateTime
+ */
 DateTime parseHeader(uint32_t ip, uint16_t port, char *host, char *path) {
+  #define LINELEN 256
+  /**
+   * holds the HTTP Date header line, which fortunately has fixed with fields
+   * Date: Tue 15 Nov 1994 08:12:31 GMT
+   */
+  typedef union dateline
+  {
+    char line[LINELEN];
+    struct fields {
+      char date[6];
+      char dow[4]; char pad; 
+      char dom[3]; char mmm[4]; char yyyy[5];
+      char hh[3]; char mm[3]; char ss[3];
+      char tz[4];
+    } fields;
+  } dateline;
+
   // first connect to the site we're gonna leech the datetime from
   Adafruit_CC3000_Client www = cc3000.connectTCP(ip, port);
   if (www.connected()) {
@@ -93,27 +117,33 @@ DateTime parseHeader(uint32_t ip, uint16_t port, char *host, char *path) {
   }
 
   // try to read the Date line in the http headers
-  char line[256];
+  dateline l;
   size_t pos = 0;
   bool wehaveadate = 0;
   unsigned long lastRead = millis();
   while (www.connected() && (millis() - lastRead < IDLE_TIMEOUT_MS)) {
     while (www.available()) {
       char c = www.read();
-      if (c == '\n') { // we've reached a newline
-        line[pos++] = 0;
+      if (c == '\n' || pos > LINELEN-2) { // we've reached a newline
         pos = 0;
         // now we need to see whether this is the 'Date:' line
-        if (line[0] == 'D' &&
-            line[1] == 'a' &&
-            line[2] == 't' &&
-            line[3] == 'e' &&
-            line[4] == ':') { // seriously? TODO: fix this shit
+        if (!strcmp(l.fields.date, "Date:")) { 
           wehaveadate = 1;
         }
       } else if (!wehaveadate) { // if we haven't reached a newline, put it in the buffer
-        line[pos] = c;
-        line[pos + 1] = 0;
+        if (pos == 5 ||
+            pos == 9 ||
+            pos == 13||
+            pos == 17||
+            pos == 22||
+            pos == 25||
+            pos == 28||
+            pos == 31) { // putting the nulls in the right place for field seperators
+          l.line[pos] = 0;
+        } else {
+          l.line[pos] = c;
+        }
+        l.line[pos + 1] = 0;
         pos++;
       }
       lastRead = millis();
@@ -121,23 +151,12 @@ DateTime parseHeader(uint32_t ip, uint16_t port, char *host, char *path) {
   }
   www.close();
   if (wehaveadate) {
-    // please fucking refactor this shit
-    // this is the fucking worst way to parse shit
-    // TODO: refactor this into an union or something less fucking terrible
-    line[10] = 0; // null after dow
-    line[13] = 0; // null after dom
-    line[17] = 0; // null after month
-    line[22] = 0; // null after year
-    line[25] = 0; // null after hour
-    line[28] = 0; // null after minute
-    line[31] = 0; // null after second
-    char *s_year = line+18;
-    char *s_month = line+14;
-    char *s_day = line+11;
-    char *s_hour = line+23;
-    char *s_minute = line+26;
-    char *s_second = line+29;
-    return DateTime(atoi(s_year), parseMonth(s_month), atoi(s_day), atoi(s_hour), atoi(s_minute), atoi(s_second));    
+    return DateTime(atoi(l.fields.yyyy),
+                    parseMonth(l.fields.mmm),
+                    atoi(l.fields.dom),
+                    atoi(l.fields.hh), 
+                    atoi(l.fields.mm), 
+                    atoi(l.fields.ss));    
   } else {
     return NULL;
   }
@@ -223,6 +242,10 @@ void loop() {
   }
  
   lcd.setCursor(0,3);
-  lcd.print("uptime: ");
-  lcd.print(millis()/1000);
+  lcd.print(now.year()); lcd.print('-');
+  lcd.print(now.month()); lcd.print('-');
+  lcd.print(now.day()); lcd.print(' ');
+  lcd.print(now.hour()); lcd.print(':');
+  lcd.print(now.minute()); lcd.print(':');
+  lcd.print(now.second());
 }

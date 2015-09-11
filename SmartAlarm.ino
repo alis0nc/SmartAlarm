@@ -1,6 +1,8 @@
 // DS1307 RTC setup stuff
 #include <Wire.h>
 #include <RTClib.h>
+
+RTC_DS1307 rtc;
 // =====================================================
 // lcd setup things
   #include <LCD.h>
@@ -173,6 +175,11 @@ void setup() {
   lcd.print("Connecting...");
   lcd.setBacklight(HIGH);
 
+  // initialising the rtc
+  rtc.begin();
+  now = rtc.now(); // update the now
+
+
   /* Initialise the module */
   Serial.println(F("\nInitialising the CC3000 ..."));
   if (!cc3000.begin())
@@ -198,33 +205,26 @@ void setup() {
   lcd.clear();
 
   // try to set current time
+  Serial.println(F("Trying to set current time from website..."));
+  uint8_t retry_count = 5;
   uint32_t ip = 0;
   // Try looking up the website's IP address
-  Serial.print(WEBSITE); Serial.print(F(" -> "));
-  while (ip == 0) {
+  while (ip == 0 && retry_count) {
     if (! cc3000.getHostByName(WEBSITE, &ip)) {
       Serial.println(F("Couldn't resolve!"));
     }
     delay(500);
+    retry_count--;
   }
-
-  now = parseHeader(ip, 80, WEBSITE, WEBPAGE);
-  Serial.print(F("year: "));
-  Serial.println(now.year());
-  Serial.print(F("month: "));
-  Serial.println(now.month());
-  Serial.print(F("day: "));
-  Serial.println(now.day());
-  Serial.print(F("hour: "));
-  Serial.println(now.hour());
-  Serial.print(F("minute: "));
-  Serial.println(now.minute());
-  Serial.print(F("second: "));
-  Serial.println(now.second());
+  if (ip) {
+    DateTime cur = parseHeader(ip, 80, WEBSITE, WEBPAGE);
+    rtc.adjust(cur);
+  }
 }
 
 void loop() {
   // put your main code here, to run repeatedly:
+  now = rtc.now();
   lcd.setCursor(0,0);
   if (cc3000.checkConnected()) {
     lcd.print("ssid: ");

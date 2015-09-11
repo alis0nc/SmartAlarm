@@ -165,6 +165,62 @@ DateTime parseHeader(uint32_t ip, uint16_t port, char *host, char *path) {
   
 }
 
+/**
+ * updates LCD
+ * clock at 10Hz
+ * wifi status every ten seconds
+ */
+class DisplayUpdater {
+  // last updated
+  unsigned long LastUpdatedTime;
+  unsigned long LastUpdatedWifiStatus;
+  const unsigned long TimeUpdateInterval = 100; // 100ms
+  const unsigned long WifiUpdateInterval = 10000; // 10 seconds
+
+public:
+  DisplayUpdater() {
+    LastUpdatedTime = 0;
+    LastUpdatedWifiStatus = 0;
+  }
+
+  void update(LiquidCrystal_I2C& lcd, RTC_DS1307& rtc, Adafruit_CC3000& cc3000) {
+    // is it time yet?
+    if ((millis() - LastUpdatedTime) > TimeUpdateInterval) {
+      LastUpdatedTime = millis();
+      now = rtc.now();
+      lcd.setCursor(0,3);
+      lcd.print("                    "); // clear that line
+      lcd.setCursor(0,3);
+      lcd.print(now.year()); lcd.print('-');
+      lcd.print(now.month()); lcd.print('-');
+      lcd.print(now.day()); lcd.print(' ');
+      lcd.print(now.hour()); lcd.print(':');
+      lcd.print(now.minute()); lcd.print(':');
+      lcd.print(now.second());
+    } else if ((millis() - LastUpdatedWifiStatus) > WifiUpdateInterval) {
+      LastUpdatedWifiStatus = millis();
+      lcd.setCursor(0,0);
+      if (cc3000.checkConnected()) {
+        lcd.print("ssid: ");
+        uint32_t ipAddress, netmask, gateway, dhcpserv, dnsserv;
+        char ipbuf[17];
+        cc3000.getIPAddress(&ipAddress, &netmask, &gateway, &dhcpserv, &dnsserv);
+        lcd.setCursor(0,1);
+        lcd.print(WLAN_SSID);
+        lcd.setCursor(0,2);
+        lcd.print("ip: ");
+        sprintf(ipbuf, "%d.%d.%d.%d", (uint8_t)(ipAddress>>24), (uint8_t)(ipAddress>>16), (uint8_t)(ipAddress>>8), (uint8_t)(ipAddress));
+        lcd.print(ipbuf);
+      } else {
+        lcd.clear();
+        lcd.print("disconnected!");
+      }
+    }
+  }
+};
+
+DisplayUpdater DU;
+
 void setup() {
   // serial debug connection
   Serial.begin(115200);
@@ -225,27 +281,6 @@ void setup() {
 void loop() {
   // put your main code here, to run repeatedly:
   now = rtc.now();
-  lcd.setCursor(0,0);
-  if (cc3000.checkConnected()) {
-    lcd.print("ssid: ");
-    uint32_t ipAddress, netmask, gateway, dhcpserv, dnsserv;
-    char ipbuf[17];
-    cc3000.getIPAddress(&ipAddress, &netmask, &gateway, &dhcpserv, &dnsserv);
-    lcd.setCursor(0,1);
-    lcd.print(WLAN_SSID);
-    lcd.setCursor(0,2);
-    lcd.print("ip: ");
-    sprintf(ipbuf, "%d.%d.%d.%d", (uint8_t)(ipAddress>>24), (uint8_t)(ipAddress>>16), (uint8_t)(ipAddress>>8), (uint8_t)(ipAddress));
-    lcd.print(ipbuf);
-  } else {
-    lcd.print("disconnected!");
-  }
+  DU.update(lcd, rtc, cc3000);
  
-  lcd.setCursor(0,3);
-  lcd.print(now.year()); lcd.print('-');
-  lcd.print(now.month()); lcd.print('-');
-  lcd.print(now.day()); lcd.print(' ');
-  lcd.print(now.hour()); lcd.print(':');
-  lcd.print(now.minute()); lcd.print(':');
-  lcd.print(now.second());
 }

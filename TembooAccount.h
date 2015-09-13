@@ -21,8 +21,10 @@ and copy this content into it.
 #define TEMBOO_APP_KEY_NAME "dummy"  // Your Temboo app key name
 #define TEMBOO_APP_KEY "dummy"  // Your Temboo app key
 
-#define WIFI_SSID "dummy"
-#define WPA_PASSWORD "dummy"
+#define WLAN_SSID "dummy"
+#define WLAN_PASS "dummy"
+// Security can be WLAN_SEC_UNSEC, WLAN_SEC_WEP, WLAN_SEC_WPA or WLAN_SEC_WPA2
+#define WLAN_SECURITY   WLAN_SEC_WPA2
 
 /* 
 The same TembooAccount.h file settings can be used for all Temboo SDK sketches.  

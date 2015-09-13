@@ -11,10 +11,6 @@
 
 // settings
 #define TZOFFSET        -4 // UTC-0400 eastern daylight time
-#define WLAN_SSID       "Anything Box"        // cannot be longer than 32 characters!
-#define WLAN_PASS       "3l3ktr0delica"
-// Security can be WLAN_SEC_UNSEC, WLAN_SEC_WEP, WLAN_SEC_WPA or WLAN_SEC_WPA2
-#define WLAN_SECURITY   WLAN_SEC_WPA2
 
 #define WEBSITE "www.adafruit.com"
 #define WEBPAGE "/testwifi/index.html"

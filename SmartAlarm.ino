@@ -1,12 +1,20 @@
-// DS1307 RTC setup stuff
+// Headers
 #include <Wire.h>
 #include <RTClib.h>
-
+#include <LCD.h>
+#include <LiquidCrystal_I2C.h>
+#include <Adafruit_CC3000.h>
+#include <ccspi.h>
+#include <SPI.h>
+#include <string.h>
+#include "utility/debug.h"
+#include <Client.h>
+#include <Temboo.h>
+#include "Settings.h"
+// DS1307 RTC setup stuff
 RTC_DS1307 rtc;
 // =====================================================
 // lcd setup things
-  #include <LCD.h>
-  #include <LiquidCrystal_I2C.h>
   #define I2C_ADDR      0x27 // I2C address of PCF8574A
   #define BACKLIGHT_PIN 3
   #define En_pin        2
@@ -20,12 +28,6 @@ RTC_DS1307 rtc;
 // end lcd setup things
 // =====================================================
 // cc3000 setup things
-#include <Adafruit_CC3000.h>
-#include <ccspi.h>
-#include <SPI.h>
-#include <string.h>
-#include "utility/debug.h"
-
 // These are the interrupt and control pins
 #define ADAFRUIT_CC3000_IRQ   3  // MUST be an interrupt pin!
 // These can be any two pins
@@ -35,15 +37,6 @@ RTC_DS1307 rtc;
 // On an UNO, SCK = 13, MISO = 12, and MOSI = 11
 Adafruit_CC3000 cc3000 = Adafruit_CC3000(ADAFRUIT_CC3000_CS, ADAFRUIT_CC3000_IRQ, ADAFRUIT_CC3000_VBAT,
                                          SPI_CLOCK_DIVIDER); // you can change this clock speed but DI
-
-#define WLAN_SSID       "Anything Box"        // cannot be longer than 32 characters!
-#define WLAN_PASS       "3l3ktr0delica"
-// Security can be WLAN_SEC_UNSEC, WLAN_SEC_WEP, WLAN_SEC_WPA or WLAN_SEC_WPA2
-#define WLAN_SECURITY   WLAN_SEC_WPA2
-
-#define WEBSITE "www.adafruit.com"
-#define WEBPAGE "/testwifi/index.html"
-#define IDLE_TIMEOUT_MS 3000
 // end cc3000 setup things
 // =====================================================
 
@@ -274,6 +267,7 @@ void setup() {
   }
   if (ip) {
     DateTime cur = parseHeader(ip, 80, WEBSITE, WEBPAGE);
+    cur = cur + TimeSpan(0, TZOFFSET, 0, 0);
     rtc.adjust(cur);
   }
 }

@@ -10,6 +10,7 @@
 #include "utility/debug.h"
 #include <Client.h>
 #include <Temboo.h>
+#include "TembooAccount.h"
 #include "Settings.h"
 // DS1307 RTC setup stuff
 RTC_DS1307 rtc;

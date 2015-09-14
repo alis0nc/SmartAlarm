@@ -229,28 +229,23 @@ public:
   void update(LiquidCrystal_I2C& lcd, RTC_DS1307& rtc, Adafruit_CC3000& cc3000) {
     // is it time yet?
     if ((millis() - LastUpdatedTime) > TimeUpdateInterval) {
+      char timedisplay[20];
       LastUpdatedTime = millis();
       now = rtc.now();
-      lcd.setCursor(0,3);
-      lcd.print("                    "); // clear that line
-      lcd.setCursor(0,3);
-      lcd.print(now.year()); lcd.print('-');
-      lcd.print(now.month()); lcd.print('-');
-      lcd.print(now.day()); lcd.print(' ');
-      lcd.print(now.hour()); lcd.print(':');
-      lcd.print(now.minute()); lcd.print(':');
-      lcd.print(now.second());
+      sprintf(timedisplay, "%04d-%02d-%02d %02d:%02d:%02d", now.year(), now.month(), now.day(), now.hour(), now.minute(), now.second());
+      lcd.setCursor(0,0);
+      lcd.print(timedisplay);
     } else if ((millis() - LastUpdatedWifiStatus) > WifiUpdateInterval) {
       LastUpdatedWifiStatus = millis();
-      lcd.setCursor(0,0);
+      lcd.setCursor(0,1);
       if (cc3000.checkConnected()) {
         lcd.print("ssid: ");
         uint32_t ipAddress, netmask, gateway, dhcpserv, dnsserv;
         char ipbuf[17];
         cc3000.getIPAddress(&ipAddress, &netmask, &gateway, &dhcpserv, &dnsserv);
-        lcd.setCursor(0,1);
-        lcd.print(WLAN_SSID);
         lcd.setCursor(0,2);
+        lcd.print(WLAN_SSID);
+        lcd.setCursor(0,3);
         lcd.print("ip: ");
         sprintf(ipbuf, "%d.%d.%d.%d", (uint8_t)(ipAddress>>24), (uint8_t)(ipAddress>>16), (uint8_t)(ipAddress>>8), (uint8_t)(ipAddress));
         lcd.print(ipbuf);

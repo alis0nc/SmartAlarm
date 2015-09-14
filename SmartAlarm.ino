@@ -48,6 +48,8 @@ Adafruit_CC3000 cc3000 = Adafruit_CC3000(ADAFRUIT_CC3000_CS, ADAFRUIT_CC3000_IRQ
 #define KEY_DOWN 1
 #define KEY_UP 2
 #define KEY_OK 8
+// random defines
+#define NALARMS 10
 
 DateTime now = DateTime(0);
 
@@ -167,10 +169,16 @@ DateTime parseHeader(uint32_t ip, uint16_t port, char *host, char *path) {
   
 }
 
+typedef struct {
+  DateTime set;
+  bool active;
+  bool sounding;
+} alarm;
+
 /** 
  * raises an alarm
  */
-class Alarm {
+class AlarmSounder {
   unsigned long PrevMillis;
   unsigned long DurationOn; // in millis
   unsigned long DurationOff; // in millis
@@ -178,14 +186,14 @@ class Alarm {
   uint8_t pin;
 
 public:
-  Alarm(unsigned long dOn, unsigned long dOff, uint8_t p) {
+  AlarmSounder(unsigned long dOn, unsigned long dOff, uint8_t p) {
     DurationOn = dOn;
     DurationOff = dOff;
     pin = p;
     state = LOW;
   }
 
-  Alarm() { // default
+  AlarmSounder() { // default
     DurationOn = 1000; // 1 second
     DurationOff = 1000; // 1 second
     pin = RELAY1;
@@ -194,7 +202,6 @@ public:
 
   void PoundTheAlarm() { // shameless Nicki Minaj reference
     if (!state && (millis() - PrevMillis) > DurationOff) {
-    Serial.print("PTA!");
       // turn it on
       digitalWrite(pin, HIGH);
       state = HIGH;
@@ -205,6 +212,12 @@ public:
       state = LOW;
       PrevMillis = millis();
     }
+  }
+
+  void KillTheAlarm() {
+    digitalWrite(pin, LOW);
+    state = LOW;
+    PrevMillis = 0L;
   }
 };
 
@@ -258,6 +271,8 @@ public:
 };
 
 DisplayUpdater DU;
+alarm alarms[NALARMS];
+AlarmSounder AS(1000, 500, RELAY1);
 
 void setup() {
   // serial debug connection
@@ -266,6 +281,10 @@ void setup() {
   pinMode(RELAY1, OUTPUT);
   pinMode(RELAY2, OUTPUT);
   pinMode(RELAY4, OUTPUT);
+  pinMode(KEY_CANCEL, INPUT_PULLUP);
+  pinMode(KEY_DOWN, INPUT_PULLUP);
+  pinMode(KEY_UP, INPUT_PULLUP);
+  pinMode(KEY_OK, INPUT_PULLUP);
   // put your setup code here, to run once:
   Serial.println(F("\nInitialising the LCD ..."));
   lcd.begin(20,4);
@@ -318,11 +337,33 @@ void setup() {
     DateTime cur = parseHeader(ip, 80, WEBSITE, WEBPAGE);
     cur = cur + TimeSpan(0, TZOFFSET, 0, 0);
     rtc.adjust(cur);
-  }
+  } 
 }
 
 void loop() {
   // put your main code here, to run repeatedly:
   now = rtc.now();
   DU.update(lcd, rtc, cc3000);
+  // check alarms
+  uint8_t i;
+  for (i = 0; i < NALARMS; i++) {
+    if (alarms[i].set.unixtime() <= now.unixtime() && 
+        alarms[i].active) {
+      // pound the alarm
+      AS.PoundTheAlarm();
+      alarms[i].sounding = true;
+    }
+  }
+  // do UI stuff
+  if (!digitalRead(KEY_CANCEL)) {
+    Serial.print("Cancelled!");
+    // cancel the alarm
+    for (i = 0; i < NALARMS; i++) {
+      if (alarms[i].sounding) {
+        AS.KillTheAlarm();
+        alarms[i].sounding = false;
+        alarms[i].active = false;
+      }
+    }
+  }
 }

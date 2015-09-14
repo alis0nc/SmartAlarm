@@ -38,6 +38,16 @@ Adafruit_CC3000 cc3000 = Adafruit_CC3000(ADAFRUIT_CC3000_CS, ADAFRUIT_CC3000_IRQ
                                          SPI_CLOCK_DIVIDER); // you can change this clock speed but DI
 // end cc3000 setup things
 // =====================================================
+// relay shield stuff
+#define RELAY1 7
+#define RELAY2 6
+#define RELAY3 5 // don't use; conflicts with CC3000 VBAT_SW_EN
+#define RELAY4 4
+// keys
+#define KEY_CANCEL 0
+#define KEY_DOWN 1
+#define KEY_UP 2
+#define KEY_OK 8
 
 DateTime now = DateTime(0);
 
@@ -157,6 +167,47 @@ DateTime parseHeader(uint32_t ip, uint16_t port, char *host, char *path) {
   
 }
 
+/** 
+ * raises an alarm
+ */
+class Alarm {
+  unsigned long PrevMillis;
+  unsigned long DurationOn; // in millis
+  unsigned long DurationOff; // in millis
+  bool state;
+  uint8_t pin;
+
+public:
+  Alarm(unsigned long dOn, unsigned long dOff, uint8_t p) {
+    DurationOn = dOn;
+    DurationOff = dOff;
+    pin = p;
+    state = LOW;
+  }
+
+  Alarm() { // default
+    DurationOn = 1000; // 1 second
+    DurationOff = 1000; // 1 second
+    pin = RELAY1;
+    state = LOW;
+  }
+
+  void PoundTheAlarm() { // shameless Nicki Minaj reference
+    if (!state && (millis() - PrevMillis) > DurationOff) {
+    Serial.print("PTA!");
+      // turn it on
+      digitalWrite(pin, HIGH);
+      state = HIGH;
+      PrevMillis = millis();
+    } else if (state && (millis() - PrevMillis) > DurationOn) {
+      // turn it off
+      digitalWrite(pin, LOW);
+      state = LOW;
+      PrevMillis = millis();
+    }
+  }
+};
+
 /**
  * updates LCD
  * clock at 10Hz
@@ -216,6 +267,10 @@ DisplayUpdater DU;
 void setup() {
   // serial debug connection
   Serial.begin(115200);
+  // I/O
+  pinMode(RELAY1, OUTPUT);
+  pinMode(RELAY2, OUTPUT);
+  pinMode(RELAY4, OUTPUT);
   // put your setup code here, to run once:
   Serial.println(F("\nInitialising the LCD ..."));
   lcd.begin(20,4);
@@ -275,5 +330,4 @@ void loop() {
   // put your main code here, to run repeatedly:
   now = rtc.now();
   DU.update(lcd, rtc, cc3000);
- 
 }

@@ -471,8 +471,10 @@ void loop() {
     while(!digitalRead(KEY_CANCEL)); // debounce
     Serial.print("Cancelled!");
     alarm *cancelled = alarms.pop();
-    cancelled->sounding = FALSE;
-    free(cancelled);
+    if (cancelled) {
+      cancelled->sounding = FALSE;
+      free(cancelled); 
+    }
     AS.KillTheAlarm();
   } else if (!setting && !digitalRead(KEY_OK)) {
     // enter the setting mode

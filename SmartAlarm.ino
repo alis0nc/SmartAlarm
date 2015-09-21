@@ -444,6 +444,8 @@ void setup() {
 
   // begin the rest server
   restServer.begin();
+
+  Serial.println(F("Setup complete!"));
 }
 
 void loop() {

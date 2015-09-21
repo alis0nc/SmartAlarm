@@ -9,6 +9,7 @@
 #include <string.h>
 #include "utility/debug.h"
 #include <Client.h>
+#include <aREST.h>
 #include "Settings.h"
 // DS1307 RTC setup stuff
 RTC_DS1307 rtc;
@@ -48,8 +49,16 @@ Adafruit_CC3000 cc3000 = Adafruit_CC3000(ADAFRUIT_CC3000_CS, ADAFRUIT_CC3000_IRQ
 #define KEY_DOWN 1
 #define KEY_UP 2
 #define KEY_OK 8
+// setting step enum
+#define STEP_YEAR 0
+#define STEP_MONTH 1
+#define STEP_DAY 2
+#define STEP_HOUR 3
+#define STEP_MINUTE 4
+#define STEP_SECOND 5
 // random defines
 #define NALARMS 10
+#define LISTEN_PORT 80
 
 DateTime now = DateTime(0);
 
@@ -169,10 +178,11 @@ DateTime parseHeader(uint32_t ip, uint16_t port, char *host, char *path) {
   
 }
 
-typedef struct {
+typedef struct alarm {
   DateTime set;
   bool active;
   bool sounding;
+  struct alarm *next;
 } alarm;
 
 /** 
@@ -270,9 +280,97 @@ public:
   }
 };
 
+/**
+ * a queue of alarms
+ */
+class AlarmQueue {
+  alarm *head;
+  uint8_t size;
+  uint8_t max_size;
+
+public:
+  AlarmQueue(uint8_t m) {
+    max_size = m;
+    head = NULL;
+  }
+
+  AlarmQueue() {
+    max_size = NALARMS;
+    head = NULL;
+  }
+
+  void push (alarm *a) {
+    // special case for an empty list
+    if (!head) {
+      head = a;
+      return;
+    }
+    alarm *cur = head;
+    alarm *prev = NULL;
+    while ( cur && (cur->set.unixtime() < a->set.unixtime())) {
+      prev = cur;
+      cur = cur->next;
+    }
+    if (prev) {
+      prev->next = a;
+    } else { // nothing came before the new alarm
+      head = a;
+    }
+    a->next = cur;
+  }
+
+  alarm *pop() {
+    // special case for an empty list
+    if (!head) {
+      return NULL;
+    }
+    alarm *tmp = head;
+    head = head->next;
+    return tmp;
+  }
+
+  alarm *peek() {
+    return head;
+  }
+};
+
+
 DisplayUpdater DU;
-alarm alarms[NALARMS];
 AlarmSounder AS(1000, 500, RELAY1);
+AlarmQueue alarms(NALARMS);
+aREST rest = aREST();
+Adafruit_CC3000_Server restServer(LISTEN_PORT);
+
+/**
+ * REST compatible function for setting an alarm
+ * yyyy-mm-dd_hh:mm:ss
+ */
+int setAlarm(String command) {
+  Serial.println(command);
+  // delimiters
+  command[4] = 0; command[7] = 0; command[10] = 0;
+  command[13] = 0; command[16] = 0;
+  uint16_t y; uint8_t m; uint8_t d;
+  uint8_t hh; uint8_t mm; uint8_t ss;
+  y = atoi(command.c_str());
+  m = atoi(command.c_str() + 5);
+  d = atoi(command.c_str() + 8);
+  hh = atoi(command.c_str() + 11);
+  mm = atoi(command.c_str() + 14);
+  ss = atoi(command.c_str() + 17);
+  DateTime t = DateTime(y, m, d, hh, mm, ss);
+  alarm *a;
+  if (a = (alarm *)malloc(sizeof(alarm))) {
+    a->set = t;
+    a->active = TRUE;
+    alarms.push(a);
+    Serial.print("Setting alarm... ");
+    Serial.println(t.unixtime());
+    return 0; // success
+  } else {
+    return -1; // failure
+  }
+}
 
 void setup() {
   // serial debug connection
@@ -295,6 +393,11 @@ void setup() {
   // initialising the rtc
   rtc.begin();
   now = rtc.now(); // update the now
+
+  // initialise the rest api  
+  rest.function("setAlarm", setAlarm);
+  rest.set_id("001");
+  rest.set_name("SmartAlarm");
 
 
   /* Initialise the module */
@@ -338,32 +441,170 @@ void setup() {
     cur = cur + TimeSpan(0, TZOFFSET, 0, 0);
     rtc.adjust(cur);
   } 
+
+  // begin the rest server
+  restServer.begin();
 }
 
 void loop() {
+  static bool setting;
+  static uint8_t setstep;
+  static DateTime newalarm;
   // put your main code here, to run repeatedly:
   now = rtc.now();
   DU.update(lcd, rtc, cc3000);
+  // handle rest calls
+  Adafruit_CC3000_ClientRef client = restServer.available();
+  rest.handle(client);
   // check alarms
   uint8_t i;
-  for (i = 0; i < NALARMS; i++) {
-    if (alarms[i].set.unixtime() <= now.unixtime() && 
-        alarms[i].active) {
-      // pound the alarm
-      AS.PoundTheAlarm();
-      alarms[i].sounding = true;
-    }
+  if (alarms.peek() && alarms.peek()->set.unixtime() <= now.unixtime()) {
+    // we have an active alarm!
+    alarms.peek()->sounding = true;
+    AS.PoundTheAlarm();
   }
   // do UI stuff
   if (!digitalRead(KEY_CANCEL)) {
-    Serial.print("Cancelled!");
     // cancel the alarm
-    for (i = 0; i < NALARMS; i++) {
-      if (alarms[i].sounding) {
-        AS.KillTheAlarm();
-        alarms[i].sounding = false;
-        alarms[i].active = false;
-      }
+    while(!digitalRead(KEY_CANCEL)); // debounce
+    Serial.print("Cancelled!");
+    alarm *cancelled = alarms.pop();
+    cancelled->sounding = FALSE;
+    free(cancelled);
+    AS.KillTheAlarm();
+  } else if (!setting && !digitalRead(KEY_OK)) {
+    // enter the setting mode
+    while(!digitalRead(KEY_OK)); // debouncing
+    setting = true;
+    newalarm = DateTime(now.year(), 
+                        now.month(),
+                        now.day(),
+                        now.hour(),
+                        now.minute(),
+                        0);
+    setstep = STEP_YEAR;
+  } else if (setting) {
+    switch (setstep) {
+      case STEP_YEAR:
+        if (!digitalRead(KEY_DOWN)) {
+          while(!digitalRead(KEY_DOWN)); // debouncing
+          newalarm = DateTime(newalarm.year() - 1, 
+                              newalarm.month(), 
+                              newalarm.day(),
+                              newalarm.hour(),
+                              newalarm.minute(),
+                              newalarm.second());
+        } else if (!digitalRead(KEY_UP)) {
+          while(!digitalRead(KEY_UP)); // debouncing
+          newalarm = DateTime(newalarm.year() + 1, 
+                              newalarm.month(), 
+                              newalarm.day(),
+                              newalarm.hour(),
+                              newalarm.minute(),
+                              newalarm.second());
+        } else if (!digitalRead(KEY_OK)) {
+          while(!digitalRead(KEY_OK)); // debouncing
+          setstep++;
+        }
+        break;
+      case STEP_MONTH:
+        if (!digitalRead(KEY_DOWN)) {
+          while(!digitalRead(KEY_DOWN)); // debouncing
+          newalarm = DateTime(newalarm.year(), 
+                              newalarm.month() - 1, 
+                              newalarm.day(),
+                              newalarm.hour(),
+                              newalarm.minute(),
+                              newalarm.second());
+        } else if (!digitalRead(KEY_UP)) {
+          while(!digitalRead(KEY_UP)); // debouncing
+          newalarm = DateTime(newalarm.year(), 
+                              newalarm.month() + 1, 
+                              newalarm.day(),
+                              newalarm.hour(),
+                              newalarm.minute(),
+                              newalarm.second());
+        } else if (!digitalRead(KEY_OK)) {
+          while(!digitalRead(KEY_OK)); // debouncing
+          setstep++;
+        }
+        break;
+      case STEP_DAY:
+        if (!digitalRead(KEY_DOWN)) {
+          while(!digitalRead(KEY_DOWN)); // debouncing
+          newalarm = DateTime(newalarm.year(), 
+                              newalarm.month(),
+                              newalarm.day() - 1,
+                              newalarm.hour(),
+                              newalarm.minute(),
+                              newalarm.second());
+        } else if (!digitalRead(KEY_UP)) {
+          while(!digitalRead(KEY_UP)); // debouncing
+          newalarm = DateTime(newalarm.year(), 
+                              newalarm.month(), 
+                              newalarm.day() + 1,
+                              newalarm.hour(),
+                              newalarm.minute(),
+                              newalarm.second());
+        } else if (!digitalRead(KEY_OK)) {
+          while(!digitalRead(KEY_OK)); // debouncing
+          setstep++;
+        }
+        break;
+      case STEP_HOUR:
+        if (!digitalRead(KEY_DOWN)) {
+          while(!digitalRead(KEY_DOWN)); // debouncing
+          newalarm = DateTime(newalarm.year(), 
+                              newalarm.month(), 
+                              newalarm.day(),
+                              newalarm.hour() - 1,
+                              newalarm.minute(),
+                              newalarm.second());
+        } else if (!digitalRead(KEY_UP)) {
+          while(!digitalRead(KEY_UP)); // debouncing
+          newalarm = DateTime(newalarm.year(), 
+                              newalarm.month(), 
+                              newalarm.day(),
+                              newalarm.hour() + 1,
+                              newalarm.minute(),
+                              newalarm.second());
+        } else if (!digitalRead(KEY_OK)) {
+          while(!digitalRead(KEY_OK)); // debouncing
+          setstep++;
+        }
+        break;
+      case STEP_MINUTE:
+        if (!digitalRead(KEY_DOWN)) {
+          while(!digitalRead(KEY_DOWN)); // debouncing
+          newalarm = DateTime(newalarm.year(), 
+                              newalarm.month(), 
+                              newalarm.day(),
+                              newalarm.hour(),
+                              newalarm.minute() - 1,
+                              newalarm.second());
+        } else if (!digitalRead(KEY_UP)) {
+          while(!digitalRead(KEY_UP)); // debouncing
+          newalarm = DateTime(newalarm.year(), 
+                              newalarm.month(), 
+                              newalarm.day(),
+                              newalarm.hour(),
+                              newalarm.minute() + 1,
+                              newalarm.second());
+        } else if (!digitalRead(KEY_OK)) {
+          while(!digitalRead(KEY_OK)); // debouncing
+          setstep++;
+        }
+        break;
+      default: // end
+        alarm *a;
+        if (a = (alarm *)malloc(sizeof(alarm))) {
+          a->set = newalarm;
+          a->active = true;
+          alarms.push(a);
+        }
+        setting = false;
+        break;
     }
   }
+
 }

@@ -345,7 +345,7 @@ Adafruit_CC3000_Server restServer(LISTEN_PORT);
  * REST compatible function for setting an alarm
  * yyyy-mm-dd_hh:mm:ss
  */
-int setAlarm(String command) {
+int restSetAlarm(String command) {
   Serial.println(command);
   // delimiters
   command[4] = 0; command[7] = 0; command[10] = 0;
@@ -363,12 +363,22 @@ int setAlarm(String command) {
   if (a = (alarm *)malloc(sizeof(alarm))) {
     a->set = t;
     a->active = TRUE;
+    a->next = NULL;
     alarms.push(a);
     Serial.print("Setting alarm... ");
     Serial.println(t.unixtime());
     return 0; // success
   } else {
     return -1; // failure
+  }
+}
+
+void cancel() {
+  alarm *cancelled = alarms.pop();
+  AS.KillTheAlarm();
+  if (cancelled) {
+    cancelled->sounding = FALSE;
+    free(cancelled); 
   }
 }
 
@@ -395,7 +405,7 @@ void setup() {
   now = rtc.now(); // update the now
 
   // initialise the rest api  
-  rest.function("setAlarm", setAlarm);
+  rest.function("setAlarm", restSetAlarm);
   rest.set_id("001");
   rest.set_name("SmartAlarm");
 
@@ -469,13 +479,8 @@ void loop() {
   if (!digitalRead(KEY_CANCEL)) {
     // cancel the alarm
     while(!digitalRead(KEY_CANCEL)); // debounce
-    Serial.print("Cancelled!");
-    alarm *cancelled = alarms.pop();
-    if (cancelled) {
-      cancelled->sounding = FALSE;
-      free(cancelled); 
-    }
-    AS.KillTheAlarm();
+    Serial.println("Cancelled via button!");
+    cancel();
   } else if (!setting && !digitalRead(KEY_OK)) {
     // enter the setting mode
     while(!digitalRead(KEY_OK)); // debouncing
@@ -604,6 +609,7 @@ void loop() {
         if (a = (alarm *)malloc(sizeof(alarm))) {
           a->set = newalarm;
           a->active = true;
+          a->next = NULL;
           alarms.push(a);
         }
         setting = false;

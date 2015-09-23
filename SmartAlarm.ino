@@ -240,13 +240,18 @@ class DisplayUpdater {
   // last updated
   unsigned long LastUpdatedTime;
   unsigned long LastUpdatedWifiStatus;
+  bool setting;
+  uint8_t step;
+  DateTime newalarm;
   const unsigned long TimeUpdateInterval = 100; // 100ms
   const unsigned long WifiUpdateInterval = 10000; // 10 seconds
+  
 
 public:
   DisplayUpdater() {
     LastUpdatedTime = 0;
     LastUpdatedWifiStatus = 0;
+    setting = false;
   }
 
   void update(LiquidCrystal_I2C& lcd, RTC_DS1307& rtc, Adafruit_CC3000& cc3000) {
@@ -258,8 +263,25 @@ public:
       sprintf(timedisplay, "%04d-%02d-%02d %02d:%02d:%02d", now.year(), now.month(), now.day(), now.hour(), now.minute(), now.second());
       lcd.setCursor(0,0);
       lcd.print(timedisplay);
-    } else if ((millis() - LastUpdatedWifiStatus) > WifiUpdateInterval) {
+      if (setting) { // update new setting
+        lcd.setCursor(0,2);
+        sprintf(timedisplay, "%04d-%02d-%02d %02d:%02d:%02d", newalarm.year(), newalarm.month(), newalarm.day(), newalarm.hour(), newalarm.minute(), newalarm.second());
+        lcd.print(timedisplay);
+        lcd.setCursor(0,3);
+        switch (step) {
+        case STEP_YEAR:   lcd.print(F("____               ")); break;
+        case STEP_MONTH:  lcd.print(F("     __            ")); break;
+        case STEP_DAY:    lcd.print(F("        __         ")); break;
+        case STEP_HOUR:   lcd.print(F("           __      ")); break;
+        case STEP_MINUTE: lcd.print(F("              __   ")); break;
+        case STEP_SECOND: lcd.print(F("                 __")); break;
+        default: break;
+        }
+      }
+    }
+    if (!setting && (millis() - LastUpdatedWifiStatus) > WifiUpdateInterval) { // only update wifi status if it's not in progress of setting
       LastUpdatedWifiStatus = millis();
+      lcd.clear();
       lcd.setCursor(0,1);
       if (cc3000.checkConnected()) {
         lcd.print("ssid: ");
@@ -276,7 +298,13 @@ public:
         lcd.clear();
         lcd.print("disconnected!");
       }
-    }
+    } 
+  }
+
+  void settingUpdate(bool s, DateTime dt, uint8_t st) {
+    setting = s;
+    newalarm = dt;
+    step = st;
   }
 };
 
@@ -465,6 +493,7 @@ void loop() {
   // put your main code here, to run repeatedly:
   now = rtc.now();
   DU.update(lcd, rtc, cc3000);
+  DU.settingUpdate(setting, newalarm, setstep);
   // handle rest calls
   Adafruit_CC3000_ClientRef client = restServer.available();
   rest.handle(client);

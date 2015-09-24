@@ -264,6 +264,8 @@ public:
       lcd.setCursor(0,0);
       lcd.print(timedisplay);
       if (setting) { // update new setting
+        lcd.setCursor(0,1);
+        lcd.print(F("New alarm:"));
         lcd.setCursor(0,2);
         sprintf(timedisplay, "%04d-%02d-%02d %02d:%02d:%02d", newalarm.year(), newalarm.month(), newalarm.day(), newalarm.hour(), newalarm.minute(), newalarm.second());
         lcd.print(timedisplay);
@@ -282,13 +284,11 @@ public:
     if (!setting && (millis() - LastUpdatedWifiStatus) > WifiUpdateInterval) { // only update wifi status if it's not in progress of setting
       LastUpdatedWifiStatus = millis();
       lcd.clear();
-      lcd.setCursor(0,1);
+      lcd.setCursor(0,2);
       if (cc3000.checkConnected()) {
-        lcd.print("ssid: ");
         uint32_t ipAddress, netmask, gateway, dhcpserv, dnsserv;
         char ipbuf[17];
         cc3000.getIPAddress(&ipAddress, &netmask, &gateway, &dhcpserv, &dnsserv);
-        lcd.setCursor(0,2);
         lcd.print(WLAN_SSID);
         lcd.setCursor(0,3);
         lcd.print("ip: ");

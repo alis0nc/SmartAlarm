@@ -11,6 +11,7 @@
 #include <Client.h>
 #include <aREST.h>
 #include "Settings.h"
+#include "Alarms.h"
 // DS1307 RTC setup stuff
 RTC_DS1307 rtc;
 // =====================================================
@@ -57,7 +58,6 @@ Adafruit_CC3000 cc3000 = Adafruit_CC3000(ADAFRUIT_CC3000_CS, ADAFRUIT_CC3000_IRQ
 #define STEP_MINUTE 4
 #define STEP_SECOND 5
 // random defines
-#define NALARMS 10
 #define LISTEN_PORT 80
 
 DateTime now = DateTime(0);
@@ -178,12 +178,6 @@ DateTime parseHeader(uint32_t ip, uint16_t port, char *host, char *path) {
   
 }
 
-typedef struct alarm {
-  DateTime set;
-  bool active;
-  bool sounding;
-  struct alarm *next;
-} alarm;
 
 /** 
  * raises an alarm
@@ -254,7 +248,7 @@ public:
     setting = false;
   }
 
-  void update(LiquidCrystal_I2C& lcd, RTC_DS1307& rtc, Adafruit_CC3000& cc3000) {
+  void update(LiquidCrystal_I2C& lcd, RTC_DS1307& rtc, Adafruit_CC3000& cc3000, AlarmQueue& alarms) {
     // is it time yet?
     if ((millis() - LastUpdatedTime) > TimeUpdateInterval) {
       char timedisplay[20];
@@ -279,6 +273,17 @@ public:
         case STEP_SECOND: lcd.print(F("                 __")); break;
         default: break;
         }
+      } else { // display next alarm
+        alarm *a = alarms.peek();
+        lcd.setCursor(0,1);
+        if (a) {
+          DateTime dt = a->set;
+          sprintf(timedisplay, "next:%02d-%02d %02d:%02d:%02d", dt.month(), dt.day(), dt.hour(), dt.minute(), dt.second());
+          lcd.print(timedisplay);
+        } else {
+          lcd.print(F("                    "));
+        }
+      
       }
     }
     if (!setting && (millis() - LastUpdatedWifiStatus) > WifiUpdateInterval) { // only update wifi status if it's not in progress of setting
@@ -305,60 +310,6 @@ public:
     setting = s;
     newalarm = dt;
     step = st;
-  }
-};
-
-/**
- * a queue of alarms
- */
-class AlarmQueue {
-  alarm *head;
-  uint8_t size;
-  uint8_t max_size;
-
-public:
-  AlarmQueue(uint8_t m) {
-    max_size = m;
-    head = NULL;
-  }
-
-  AlarmQueue() {
-    max_size = NALARMS;
-    head = NULL;
-  }
-
-  void push (alarm *a) {
-    // special case for an empty list
-    if (!head) {
-      head = a;
-      return;
-    }
-    alarm *cur = head;
-    alarm *prev = NULL;
-    while ( cur && (cur->set.unixtime() < a->set.unixtime())) {
-      prev = cur;
-      cur = cur->next;
-    }
-    if (prev) {
-      prev->next = a;
-    } else { // nothing came before the new alarm
-      head = a;
-    }
-    a->next = cur;
-  }
-
-  alarm *pop() {
-    // special case for an empty list
-    if (!head) {
-      return NULL;
-    }
-    alarm *tmp = head;
-    head = head->next;
-    return tmp;
-  }
-
-  alarm *peek() {
-    return head;
   }
 };
 
@@ -492,7 +443,7 @@ void loop() {
   static DateTime newalarm;
   // put your main code here, to run repeatedly:
   now = rtc.now();
-  DU.update(lcd, rtc, cc3000);
+  DU.update(lcd, rtc, cc3000, alarms);
   DU.settingUpdate(setting, newalarm, setstep);
   // handle rest calls
   Adafruit_CC3000_ClientRef client = restServer.available();
